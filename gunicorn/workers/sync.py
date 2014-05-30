@@ -93,6 +93,7 @@ class SyncWorker(base.Worker):
             # the backend.
             resp.force_close()
             self.nr += 1
+            self.requests[environ[self.environ_key]] = (request_start, environ)
             if self.nr >= self.max_requests:
                 self.log.info("Autorestarting worker after current request.")
                 self.alive = False
@@ -117,6 +118,7 @@ class SyncWorker(base.Worker):
             return
         finally:
             try:
+                del self.requests[environ[self.environ_key]]
                 self.cfg.post_request(self, req, environ)
             except:
                 pass

@@ -57,6 +57,7 @@ class AsyncWorker(base.Worker):
             request_start = datetime.now()
             resp, environ = wsgi.create(req, sock, addr, self.address, self.cfg)
             self.nr += 1
+            self.requests[environ[self.environ_key]] = (request_start, environ)
             if self.alive and self.nr >= self.max_requests:
                 self.log.info("Autorestarting worker after current request.")
                 resp.force_close()
@@ -77,6 +78,7 @@ class AsyncWorker(base.Worker):
                 raise StopIteration()
         finally:
             try:
+                del self.requests[environ[self.environ_key]]
                 self.cfg.post_request(self, req, environ)
             except:
                 pass

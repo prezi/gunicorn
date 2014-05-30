@@ -5,6 +5,7 @@
 
 
 import logging
+from datetime import datetime
 import os
 import signal
 import sys
@@ -22,7 +23,7 @@ class Worker(object):
 
     SIGNALS = map(
         lambda x: getattr(signal, "SIG%s" % x),
-        "HUP QUIT INT TERM USR1 USR2 WINCH CHLD".split()
+        "HUP QUIT INT TERM USR1 USR2 WINCH CHLD ILL".split()
     )
     
     PIPE = []
@@ -43,6 +44,8 @@ class Worker(object):
 
         self.nr = 0
         self.max_requests = cfg.max_requests or sys.maxint
+        self.requests = dict()
+        self.environ_key = "gunicorn.socket"
         self.alive = True
         self.log = log
         self.debug = cfg.debug
@@ -110,11 +113,13 @@ class Worker(object):
         signal.signal(signal.SIGINT, self.handle_exit)
         signal.signal(signal.SIGWINCH, self.handle_winch)
         signal.signal(signal.SIGUSR1, self.handle_usr1)
-        # Don't let SIGQUIT and SIGUSR1 disturb active requests
+        signal.signal(signal.SIGILL, self.handle_ill)
+        # Don't let SIGQUIT, SIGUSR1 and SIGILL disturb active requests
         # by interrupting system calls
         if hasattr(signal, 'siginterrupt'):  # python >= 2.6
             signal.siginterrupt(signal.SIGQUIT, False)
             signal.siginterrupt(signal.SIGUSR1, False)
+            signal.siginterrupt(signal.SIGILL, False)
 
     def handle_usr1(self, sig, frame):
         self.log.reopen_files()
@@ -125,6 +130,13 @@ class Worker(object):
     def handle_exit(self, sig, frame):
         self.alive = False
         sys.exit(0)
+
+    def handle_ill(self, sig, frame):
+        self.log.info("Worker received SIGILL")
+        now = datetime.now()
+        for (request_start, environ) in self.requests.values():
+            request_time = now - request_start
+            self.log.info("Age: %s, Request: %s" % (request_time, environ))
 
     def handle_error(self, client, exc):
         self.log.exception("Error handling request")

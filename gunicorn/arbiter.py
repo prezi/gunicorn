@@ -43,7 +43,7 @@ class Arbiter(object):
     SIG_QUEUE = []
     SIGNALS = map(
         lambda x: getattr(signal, "SIG%s" % x),
-        "HUP QUIT INT TERM TTIN TTOU USR1 USR2 WINCH".split()
+        "HUP QUIT INT TERM TTIN TTOU USR1 USR2 WINCH ILL".split()
     )
     SIG_NAMES = dict(
         (getattr(signal, name), name[3:].lower()) for name in dir(signal)
@@ -266,7 +266,12 @@ class Arbiter(object):
             self.kill_workers(signal.SIGQUIT)
         else:
             self.log.info("SIGWINCH ignored. Not daemonized")
-    
+
+    def handle_ill(self):
+        "SIGILL handling"
+        self.log.info("Master received SIGILL. Broadcasting it to workers.")
+        self.kill_workers(signal.SIGILL)
+
     def wakeup(self):
         """\
         Wake up the arbiter by writing to the PIPE
