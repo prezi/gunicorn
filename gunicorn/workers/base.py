@@ -5,7 +5,8 @@
 
 
 import logging
-from datetime import datetime
+import datetime
+import time
 import os
 import signal
 import sys
@@ -133,10 +134,14 @@ class Worker(object):
 
     def handle_ill(self, sig, frame):
         self.log.info("Worker received SIGILL")
-        now = datetime.now()
+        time_stamp = time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
+        file_name = ("/tmp/gunicorn_sigill_%s_%s" % (time_stamp, self.pid))
+        file = open(file_name, 'a')
+        now = datetime.datetime.now()
         for (request_start, environ) in self.requests.values():
             request_time = now - request_start
-            self.log.info("Age: %s, Request: %s" % (request_time, environ))
+            file.write("[%s] Age: %s, Request: %s\n" % (self.pid, request_time, environ))
+        file.close()
 
     def handle_error(self, client, exc):
         self.log.exception("Error handling request")
