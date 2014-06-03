@@ -3,10 +3,7 @@
 # This file is part of gunicorn released under the MIT license. 
 # See the NOTICE for more information.
 
-
-import logging
 import datetime
-import time
 import os
 import signal
 import sys
@@ -133,11 +130,11 @@ class Worker(object):
         sys.exit(0)
 
     def handle_ill(self, sig, frame):
-        self.log.info("Worker received SIGILL")
-        time_stamp = time.strftime('%Y_%m_%d_%H_%M_%S', time.localtime())
-        file_name = ("/tmp/gunicorn_sigill_%s_%s" % (time_stamp, self.pid))
-        file = open(file_name, 'a')
         now = datetime.datetime.now()
+        time_stamp = now.strftime('%Y%m%d%H%M%S')
+        file_path = ("/tmp/gunicornsigill_%s_%s" % (time_stamp, self.pid))
+        self.log.info("Worker received SIGILL. Logging open requests to %s" % (file_path))
+        file = open(file_path, 'a')
         for (request_start, environ) in self.requests.values():
             request_time = now - request_start
             file.write("[%s] Age: %s, Request: %s\n" % (self.pid, request_time, environ))

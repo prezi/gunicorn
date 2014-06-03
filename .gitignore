@@ -17,3 +17,4 @@ doc/.sass-cache
 examples/frameworks/pylonstest/PasteScript*
 examples/frameworks/pylonstest/pylonstest.egg-info/
 gunicorn/.idea/
+.idea/
