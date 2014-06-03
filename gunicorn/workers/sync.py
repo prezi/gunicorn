@@ -9,6 +9,7 @@ import errno
 import os
 import select
 import socket
+import threading
 
 import gunicorn.http as http
 import gunicorn.http.wsgi as wsgi
@@ -93,7 +94,8 @@ class SyncWorker(base.Worker):
             # the backend.
             resp.force_close()
             self.nr += 1
-            self.requests[environ[self.environ_key]] = (request_start, environ)
+            self.requests[environ[self.environ_key]] = (request_start, environ, threading.current_thread().ident)
+
             if self.nr >= self.max_requests:
                 self.log.info("Autorestarting worker after current request.")
                 self.alive = False

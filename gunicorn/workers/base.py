@@ -134,11 +134,17 @@ class Worker(object):
         time_stamp = now.strftime('%Y%m%d%H%M%S')
         file_path = ("/tmp/gunicornsigill_%s_%s" % (time_stamp, self.pid))
         self.log.info("Worker received SIGILL. Logging open requests to %s" % (file_path))
-        file = open(file_path, 'a')
-        for (request_start, environ) in self.requests.values():
-            request_time = now - request_start
-            file.write("[%s] Age: %s, Request: %s\n" % (self.pid, request_time, environ))
-        file.close()
+
+        current_frames = sys._current_frames()
+        with open(file_path, 'a') as file:
+            for (request_start, environ, thread_id) in self.requests.values():
+                request_time = now - request_start
+                #import pdb; pdb.set_trace()
+                file.write("[%s] Age: %s, Request: %s\n" % (self.pid, request_time.microseconds, environ))
+                if current_frames.has_key(thread_id):
+                    stack = current_frames[thread_id]
+                    stack_str = "".join(traceback.format_stack(stack))
+                    file.write("Stack: %s\n" % (stack_str))
 
     def handle_error(self, client, exc):
         self.log.exception("Error handling request")
