@@ -139,12 +139,13 @@ class Worker(object):
         with open(file_path, 'a') as file:
             for (request_start, environ, thread_id) in self.requests.values():
                 request_time = now - request_start
-                #import pdb; pdb.set_trace()
-                file.write("[%s] Age: %s, Request: %s\n" % (self.pid, request_time.microseconds, environ))
-                if current_frames.has_key(thread_id):
+                file.write("[%s] Age: %s, ThreadId: %s, Request: %s\n" % (self.pid, request_time.microseconds, thread_id, environ))
+                if thread_id in current_frames:
                     stack = current_frames[thread_id]
                     stack_str = "".join(traceback.format_stack(stack))
                     file.write("Stack: %s\n" % (stack_str))
+                else:
+                    file.write("ThreadId: %s was not found in list %s\n" % (thread_id, ", ".join(str(k) for k in current_frames.keys())))
 
     def handle_error(self, client, exc):
         self.log.exception("Error handling request")
