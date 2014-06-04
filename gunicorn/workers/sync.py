@@ -6,6 +6,7 @@
 
 from datetime import datetime
 import errno
+import greenlet
 import os
 import select
 import socket
@@ -94,7 +95,7 @@ class SyncWorker(base.Worker):
             # the backend.
             resp.force_close()
             self.nr += 1
-            self.requests[environ[self.environ_key]] = (request_start, environ, threading.current_thread().ident)
+            self.requests[environ[self.environ_key]] = (request_start, environ, greenlet.getcurrent())
 
             if self.nr >= self.max_requests:
                 self.log.info("Autorestarting worker after current request.")

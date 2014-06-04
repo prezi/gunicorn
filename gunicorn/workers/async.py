@@ -9,6 +9,7 @@ from datetime import datetime
 import errno
 import socket
 import threading
+import greenlet
 
 import gunicorn.http as http
 import gunicorn.http.wsgi as wsgi
@@ -58,7 +59,7 @@ class AsyncWorker(base.Worker):
             request_start = datetime.now()
             resp, environ = wsgi.create(req, sock, addr, self.address, self.cfg)
             self.nr += 1
-            self.requests[environ[self.environ_key]] = (request_start, environ, threading.current_thread().ident)
+            self.requests[environ[self.environ_key]] = (request_start, environ, greenlet.getcurrent())
             if self.alive and self.nr >= self.max_requests:
                 self.log.info("Autorestarting worker after current request.")
                 resp.force_close()

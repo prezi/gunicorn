@@ -4,6 +4,7 @@
 # See the NOTICE for more information.
 
 import datetime
+from greenlet import greenlet
 import os
 import signal
 import sys
@@ -135,17 +136,15 @@ class Worker(object):
         file_path = ("/tmp/gunicornsigill_%s_%s" % (time_stamp, self.pid))
         self.log.info("Worker received SIGILL. Logging open requests to %s" % (file_path))
 
-        current_frames = sys._current_frames()
         with open(file_path, 'a') as file:
-            for (request_start, environ, thread_id) in self.requests.values():
+            for (request_start, environ, current_greenlet) in self.requests.values():
                 request_time = now - request_start
-                file.write("[%s] Age: %s, ThreadId: %s, Request: %s\n" % (self.pid, request_time.microseconds, thread_id, environ))
-                if thread_id in current_frames:
-                    stack = current_frames[thread_id]
-                    stack_str = "".join(traceback.format_stack(stack))
+                file.write("[%s] Age: %s, Thread: %s, Request: %s\n" % (self.pid, request_time.microseconds, current_greenlet, environ))
+                if isinstance(current_greenlet, greenlet):
+                    stack_str = "".join(traceback.format_stack(current_greenlet.gr_frame))
                     file.write("Stack: %s\n" % (stack_str))
                 else:
-                    file.write("ThreadId: %s was not found in list %s\n" % (thread_id, ", ".join(str(k) for k in current_frames.keys())))
+                    file.write("Thread: %s was not greenlet%s\n" % current_greenlet)
 
     def handle_error(self, client, exc):
         self.log.exception("Error handling request")
