@@ -95,6 +95,22 @@ Example with test app::
     $ cd examples
     $ gunicorn --workers=2 test:app
 
+Introspection
+-------------
+
+This section is specific to the patched gunicorn version Zuisite uses (0.13.3).
+In case a SIGILL signal is sent to a worker process it will dump out its open 
+requests and their stack traces to a specific file under /tmp. If the signal is
+sent to the master it broadcasts it to every worker. E.g.::
+
+    [app10.us:~] $ cat /var/run/zuisiteplacement.pid
+    14080
+    [app10.us:~] $ kill -SIGILL 14080
+    [app10.us:~] $ ls /tmp/gunicornsigill_20140623190857_*
+    ...
+    /tmp/gunicornsigill_20140623190857_10689
+    ...
+
 Integration
 -----------
 
