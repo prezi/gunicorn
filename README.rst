@@ -98,7 +98,7 @@ Example with test app::
 Introspection
 -------------
 
-This section is specific to the patched gunicorn version Zuisite uses (0.13.3).
+This section is specific to the patched gunicorn version Zuisite uses (0.13.3.prezi2).
 In case a SIGILL signal is sent to a worker process it will dump out its open 
 requests and their stack traces to a specific file under /tmp. If the signal is
 sent to the master it broadcasts it to every worker. E.g.::
@@ -110,6 +110,12 @@ sent to the master it broadcasts it to every worker. E.g.::
     ...
     /tmp/gunicornsigill_20140623190857_10689
     ...
+
+For version 18.0.prezi1 the temporary directory is generated randomly by default. If 
+one wants to specify where the state dumps should go than the worker-tmp-dir config 
+argument should be used, e.g.::
+
+    --worker-tmp-dir=/var/tmp
 
 Integration
 -----------
