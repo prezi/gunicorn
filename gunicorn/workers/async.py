@@ -32,18 +32,24 @@ class AsyncWorker(base.Worker):
         try:
             parser = http.RequestParser(self.cfg, client)
             try:
+                listener_name = listener.getsockname()
                 if not self.cfg.keepalive:
                     req = six.next(parser)
-                    self.handle_request(listener, req, client, addr)
+                    self.handle_request(listener_name, req, client, addr)
                 else:
                     # keepalive loop
+                    proxy_protocol_info = {}
                     while True:
                         req = None
                         with self.timeout_ctx():
                             req = six.next(parser)
                         if not req:
                             break
-                        self.handle_request(listener, req, client, addr)
+                        if req.proxy_protocol_info:
+                            proxy_protocol_info = req.proxy_protocol_info
+                        else:
+                            req.proxy_protocol_info = proxy_protocol_info
+                        self.handle_request(listener_name, req, client, addr)
             except http.errors.NoMoreData as e:
                 self.log.debug("Ignored premature client disconnection. %s", e)
             except StopIteration as e:
@@ -78,14 +84,14 @@ class AsyncWorker(base.Worker):
         finally:
             util.close(client)
 
-    def handle_request(self, listener, req, sock, addr):
+    def handle_request(self, listener_name, req, sock, addr):
         request_start = datetime.now()
         environ = {}
         resp = None
         try:
             self.cfg.pre_request(self, req)
             resp, environ = wsgi.create(req, sock, addr,
-                    listener.getsockname(), self.cfg)
+                    listener_name, self.cfg)
             environ["wsgi.multithread"] = True
             self.nr += 1
             if self.alive and self.nr >= self.max_requests:
@@ -113,6 +119,12 @@ class AsyncWorker(base.Worker):
                     respiter.close()
             if resp.should_close():
                 raise StopIteration()
+        except StopIteration:
+            raise
+        except socket.error:
+            # If the original exception was a socket.error we delegate
+            # handling it to the caller (where handle() might ignore it)
+            six.reraise(*sys.exc_info())
         except Exception:
             if resp and resp.headers_sent:
                 # If the requests have already been sent, we should close the

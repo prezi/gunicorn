@@ -7,14 +7,18 @@ from datetime import datetime
 import os
 import signal
 import sys
+import time
+import traceback
+from random import randint
 
 
 from gunicorn import util
 from gunicorn.workers.workertmp import WorkerTmp
 from gunicorn.reloader import Reloader
-from gunicorn.http.errors import InvalidHeader, InvalidHeaderName, \
-InvalidRequestLine, InvalidRequestMethod, InvalidHTTPVersion, \
-LimitRequestLine, LimitRequestHeaders
+from gunicorn.http.errors import (
+    InvalidHeader, InvalidHeaderName, InvalidRequestLine, InvalidRequestMethod,
+    InvalidHTTPVersion, LimitRequestLine, LimitRequestHeaders,
+)
 from gunicorn.http.errors import InvalidProxyLine, ForbiddenProxyRequest
 from gunicorn.http.wsgi import default_environ, Response
 from gunicorn.six import MAXSIZE
@@ -22,8 +26,8 @@ from gunicorn.six import MAXSIZE
 
 class Worker(object):
 
-    SIGNALS = [getattr(signal, "SIG%s" % x) \
-            for x in "HUP QUIT INT TERM USR1 USR2 WINCH CHLD".split()]
+    SIGNALS = [getattr(signal, "SIG%s" % x)
+            for x in "ABRT HUP QUIT INT TERM USR1 USR2 WINCH CHLD".split()]
 
     PIPE = []
 
@@ -40,9 +44,12 @@ class Worker(object):
         self.timeout = timeout
         self.cfg = cfg
         self.booted = False
+        self.aborted = False
+        self.reloader = None
 
         self.nr = 0
-        self.max_requests = cfg.max_requests or MAXSIZE
+        jitter = randint(0, cfg.max_requests_jitter)
+        self.max_requests = cfg.max_requests + jitter or MAXSIZE
         self.alive = True
         self.log = log
         self.tmp = WorkerTmp(cfg)
@@ -82,9 +89,9 @@ class Worker(object):
         if self.cfg.reload:
             def changed(fname):
                 self.log.info("Worker reloading: %s modified", fname)
-                os.kill(self.pid, signal.SIGTERM)
-                raise SystemExit()
-            Reloader(callback=changed).start()
+                os.kill(self.pid, signal.SIGQUIT)
+            self.reloader = Reloader(callback=changed)
+            self.reloader.start()
 
         # set environment' variables
         if self.cfg.env:
@@ -110,13 +117,28 @@ class Worker(object):
 
         self.init_signals()
 
-        self.wsgi = self.app.wsgi()
-
         self.cfg.post_worker_init(self)
+
+        self.load_wsgi()
 
         # Enter main run loop
         self.booted = True
         self.run()
+
+    def load_wsgi(self):
+        try:
+            self.wsgi = self.app.wsgi()
+        except SyntaxError as e:
+            if not self.cfg.reload:
+                raise
+
+            self.log.exception(e)
+
+            exc_type, exc_val, exc_tb = sys.exc_info()
+            self.reloader.add_extra_file(exc_val.filename)
+
+            tb_string = traceback.format_exc(exc_tb)
+            self.wsgi = util.make_fail_app(tb_string)
 
     def init_signals(self):
         # reset signaling
@@ -127,10 +149,12 @@ class Worker(object):
         signal.signal(signal.SIGINT, self.handle_quit)
         signal.signal(signal.SIGWINCH, self.handle_winch)
         signal.signal(signal.SIGUSR1, self.handle_usr1)
-        # Don't let SIGQUIT and SIGUSR1 disturb active requests
+        signal.signal(signal.SIGABRT, self.handle_abort)
+
+        # Don't let SIGTERM and SIGUSR1 disturb active requests
         # by interrupting system calls
         if hasattr(signal, 'siginterrupt'):  # python >= 2.6
-            signal.siginterrupt(signal.SIGQUIT, False)
+            signal.siginterrupt(signal.SIGTERM, False)
             signal.siginterrupt(signal.SIGUSR1, False)
 
     def handle_usr1(self, sig, frame):
@@ -138,20 +162,26 @@ class Worker(object):
 
     def handle_exit(self, sig, frame):
         self.alive = False
-        # worker_int callback
-        self.cfg.worker_int(self)
 
     def handle_quit(self, sig, frame):
         self.alive = False
+        # worker_int callback
+        self.cfg.worker_int(self)
+        time.sleep(0.1)
         sys.exit(0)
+
+    def handle_abort(self, sig, frame):
+        self.alive = False
+        self.cfg.worker_abort(self)
+        sys.exit(1)
 
     def handle_error(self, req, client, addr, exc):
         request_start = datetime.now()
         addr = addr or ('', -1)  # unix socket case
         if isinstance(exc, (InvalidRequestLine, InvalidRequestMethod,
-            InvalidHTTPVersion, InvalidHeader, InvalidHeaderName,
-            LimitRequestLine, LimitRequestHeaders,
-            InvalidProxyLine, ForbiddenProxyRequest,)):
+                InvalidHTTPVersion, InvalidHeader, InvalidHeaderName,
+                LimitRequestLine, LimitRequestHeaders,
+                InvalidProxyLine, ForbiddenProxyRequest)):
 
             status_int = 400
             reason = "Bad Request"
@@ -177,11 +207,8 @@ class Worker(object):
                 mesg = "Request forbidden"
                 status_int = 403
 
-            self.log.debug("Invalid request from ip={ip}: {error}"\
-                           "".format(ip=addr[0],
-                                     error=str(exc),
-                                    )
-                          )
+            msg = "Invalid request from ip={ip}: {error}"
+            self.log.debug(msg.format(ip=addr[0], error=str(exc)))
         else:
             self.log.exception("Error handling request")
 
