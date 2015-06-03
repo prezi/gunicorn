@@ -30,6 +30,7 @@ class AsyncWorker(base.Worker):
     def handle(self, listener, client, addr):
         req = None
         try:
+            client.settimeout(self.cfg.timeout)
             parser = http.RequestParser(self.cfg, client)
             try:
                 listener_name = listener.getsockname()
