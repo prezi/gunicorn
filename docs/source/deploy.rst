@@ -77,7 +77,7 @@ To turn off buffering, you only need to add ``proxy_buffering off;`` to your
 ``location`` block::
 
   ...
-  location / {
+  location @proxy_to_app {
       proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
       proxy_set_header Host $http_host;
       proxy_redirect off;
@@ -111,6 +111,21 @@ Gunicorn may come from untrusted proxies or directly from clients since the
 application may be tricked into serving SSL-only content over an insecure
 connection.
 
+Gunicorn 19 introduced a breaking change concerning how ``REMOTE_ADDR`` is
+handled. Previous to Gunicorn 19 this was set to the value of
+``X-Forwarded-For`` if received from a trusted proxy. However, this was not in
+compliance with :rfc:`3875` which is why the ``REMOTE_ADDR`` is now the IP
+address of **the proxy** and **not the actual user**. You should instead
+configure Nginx to send the user's IP address through the ``X-Forwarded-For``
+header like this::
+
+    ...
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    ...
+
+It is also worth noting that the ``REMOTE_ADDR`` will be completely empty if
+you bind Gunicorn to a UNIX socket and not a TCP ``host:port`` tuple.
+
 Using Virtualenv
 ================
 
@@ -124,7 +139,7 @@ this::
     $ mkdir ~/venvs/
     $ virtualenv ~/venvs/webapp
     $ source ~/venvs/webapp/bin/activate
-    $ ~/venvs/webapp/bin/easy_install -U gunicorn
+    $ pip install gunicorn
     $ deactivate
 
 Then you just need to use one of the three Gunicorn scripts that was installed
@@ -149,8 +164,8 @@ Monitoring
 Gaffer
 ------
 
-Using Gafferd and gafferctl
-+++++++++++++++++++++++++++
+Using Gafferd and gaffer
+++++++++++++++++++++++++
 
 `Gaffer <http://gaffer.readthedocs.org/en/latest/index.html>`_ can be
 used to monitor gunicorn. A simple configuration is::
@@ -159,7 +174,7 @@ used to monitor gunicorn. A simple configuration is::
     cmd = gunicorn -w 3 test:app
     cwd = /path/to/project
 
-Then you can easily manage Gunicorn using `gafferctl <http://gaffer.readthedocs.org/en/latest/gafferctl.html>`_.
+Then you can easily manage Gunicorn using `gaffer <http://gaffer.readthedocs.org/en/latest/gaffer.html>`_.
 
 
 Using a Procfile
@@ -235,7 +250,6 @@ from a virtualenv. All errors will go to /var/log/upstart/myapp.log.
     stop on runlevel [016]
 
     respawn
-    console log
     setuid nobody
     setgid nogroup
     chdir /path/to/app/directory
@@ -254,16 +268,21 @@ systemd:
 
     [Unit]
     Description=gunicorn daemon
+    Requires=gunicorn.socket
+    After=network.target
 
     [Service]
-    Type=forking
-    PIDFile=/home/urban/gunicorn/gunicorn.pid
+    PIDFile=/run/gunicorn/pid
     User=someuser
-    WorkingDirectory=/home/urban/gunicorn/bin
-    ExecStart=/home/someuser/gunicorn/bin/gunicorn -p /home/urban/gunicorn/gunicorn.pid- test:app
+    Group=someuser
+    WorkingDirectory=/home/someuser
+    ExecStart=/home/someuser/gunicorn/bin/gunicorn --pid /run/gunicorn/pid test:app
     ExecReload=/bin/kill -s HUP $MAINPID
-    ExecStop=/bin/kill -s QUIT $MAINPID
+    ExecStop=/bin/kill -s TERM $MAINPID
     PrivateTmp=true
+
+    [Install]
+    WantedBy=multi-user.target
 
 **gunicorn.socket**::
 
@@ -271,17 +290,21 @@ systemd:
     Description=gunicorn socket
 
     [Socket]
-    ListenStream=/run/gunicorn.sock
+    ListenStream=/run/gunicorn/socket
     ListenStream=0.0.0.0:9000
     ListenStream=[::]:8000
 
     [Install]
     WantedBy=sockets.target
 
+**tmpfiles.d/gunicorn.conf**::
+
+    d /run/gunicorn 0755 someuser someuser -
+
 After running curl http://localhost:9000/ gunicorn should start and you
 should see something like that in logs::
 
-    2013-02-19 23:48:19 [31436] [DEBUG] Socket activation sockets: unix:/run/gunicorn.sock,http://0.0.0.0:9000,http://[::]:8000
+    2013-02-19 23:48:19 [31436] [DEBUG] Socket activation sockets: unix:/run/gunicorn/socket,http://0.0.0.0:9000,http://[::]:8000
 
 Logging
 =======
@@ -300,7 +323,7 @@ utility::
 .. _`example service`: http://github.com/benoitc/gunicorn/blob/master/examples/gunicorn_rc
 .. _Supervisor: http://supervisord.org
 .. _`simple configuration`: http://github.com/benoitc/gunicorn/blob/master/examples/supervisor.conf
-.. _`configuration documentation`: http://gunicorn.org/configure.html#logging
+.. _`configuration documentation`: http://docs.gunicorn.org/en/latest/settings.html#logging
 .. _`logging configuration file`: https://github.com/benoitc/gunicorn/blob/master/examples/logging.conf
 .. _Virtualenv: http://pypi.python.org/pypi/virtualenv
 .. _Systemd: http://www.freedesktop.org/wiki/Software/systemd
